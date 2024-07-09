@@ -1,108 +1,120 @@
+use ggez::event::{self, EventHandler};
 use ggez::glam::*;
 use ggez::graphics;
 use ggez::graphics::Drawable;
-use ggez::{conf, event, Context, ContextBuilder, GameError, GameResult};
+use ggez::graphics::{Color, DrawMode, Mesh};
+use ggez::{Context, ContextBuilder, GameResult};
 
+use rosu_map::section::hit_objects::{self};
 use rosu_map::Beatmap;
 
-struct State {
-    dt: std::time::Duration,
-    beatmap: Beatmap,
+struct Circle {
+    position: Vec2,
+    radius: f32,
+    tag: String,
 }
 
-const CIRCLE_SIZE: f32 = 40.0;
+struct MainState {
+    map: Beatmap,
+    circles: Vec<Circle>,
+}
 
-impl State {
-    fn new(beatmap: Beatmap) -> Self {
-        Self {
-            dt: std::time::Duration::new(0, 0),
-            beatmap,
+const CIRCLE_SIZE: f32 = 4.0 * 10.0;
+
+impl MainState {
+    fn new(map: Beatmap) -> GameResult<MainState> {
+        let mut circles = Vec::new();
+        let mut circle_tag = 1;
+
+        for hit_objects in &map.hit_objects {
+            match &hit_objects.kind {
+                hit_objects::HitObjectKind::Circle(circle) => {
+                    if circle.new_combo {
+                        circle_tag = 1;
+                    }
+
+                    circles.push(Circle {
+                        position: Vec2::new(circle.pos.x, circle.pos.y),
+                        radius: CIRCLE_SIZE,
+                        tag: circle_tag.to_string(),
+                    });
+
+                    circle_tag += 1;
+                }
+                _ => {}
+            }
         }
-    }
 
-    fn draw_circle(
-        &self,
-        ctx: &mut Context,
-        canvas: &mut graphics::Canvas,
-        pos_x: f32,
-        pos_y: f32,
-        number: String,
-    ) -> GameResult {
-        // draw the circle
-        let circle = graphics::Mesh::new_circle(
-            ctx,
-            graphics::DrawMode::fill(),
-            Vec2::new(0.0, 0.0),
-            CIRCLE_SIZE,
-            1.0,
-            graphics::Color::BLACK,
-        )?;
-        canvas.draw(&circle, Vec2::new(pos_x, pos_y));
-
-        // draw the combo in the circle
-        let text = graphics::Text::new(number);
-        let text_dimensions = text.dimensions(ctx).unwrap();
-        let text_x = pos_x - text_dimensions.w as f32 / 2.0;
-        let text_y = pos_y - text_dimensions.h as f32 / 2.0;
-        canvas.draw(&text, Vec2::new(text_x, text_y));
-
-        Ok(())
+        let s = MainState { map, circles };
+        Ok(s)
     }
 }
 
-impl ggez::event::EventHandler<GameError> for State {
-    fn update(&mut self, ctx: &mut Context) -> GameResult {
-        self.dt = ctx.time.delta();
-
+impl EventHandler for MainState {
+    fn update(&mut self, _ctx: &mut Context) -> GameResult {
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(25, 50, 75));
 
-        let (screen_width, screen_height) = ctx.gfx.drawable_size();
+        for circle in &self.circles {
+            let circle_mesh = Mesh::new_circle(
+                ctx,
+                DrawMode::fill(),
+                circle.position,
+                CIRCLE_SIZE,
+                0.1,
+                Color::BLACK,
+            )?;
+            canvas.draw(&circle_mesh, Vec2::new(0.0, 0.0));
 
-        let mut hit_number = 1;
-
-        for hit_object in &self.beatmap.hit_objects {
-            match &hit_object.kind {
-                rosu_map::section::hit_objects::HitObjectKind::Circle(circle) => {
-                    let circle_pos_x = circle.pos.x;
-                    let circle_pos_y = circle.pos.y;
-
-                    if circle.new_combo {
-                        hit_number = 1;
-                    }
-
-                    self.draw_circle(
-                        ctx,
-                        &mut canvas,
-                        circle_pos_x,
-                        circle_pos_y,
-                        hit_number.to_string(),
-                    )?;
-
-                    hit_number += 1;
-                }
-                _ => {}
-            }
+            let text = graphics::Text::new(circle.tag.to_string());
+            let text_dimensions = text.dimensions(ctx).unwrap();
+            let text_x = circle.position.x - text_dimensions.w as f32 / 2.0;
+            let text_y = circle.position.y - text_dimensions.h as f32 / 2.0;
+            canvas.draw(&text, Vec2::new(text_x, text_y));
         }
 
         canvas.finish(ctx)?;
         Ok(())
     }
+
+    fn mouse_button_down_event(
+        &mut self,
+        _ctx: &mut Context,
+        _button: ggez::event::MouseButton,
+        x: f32,
+        y: f32,
+    ) -> GameResult {
+        let click_position = Vec2::new(x, y);
+        let mut closest_circle_index: Option<usize> = None;
+        let mut closest_distance = f32::MAX;
+
+        for (i, circle) in self.circles.iter().enumerate() {
+            let distance_from_click = circle.position.distance(click_position);
+
+            if distance_from_click < circle.radius && distance_from_click < closest_distance {
+                closest_distance = distance_from_click;
+                closest_circle_index = Some(i);
+            }
+        }
+
+        if let Some(index) = closest_circle_index {
+            self.circles.remove(index);
+        }
+
+        Ok(())
+    }
 }
 
-fn main() {
-    let (ctx, event_loop) = ContextBuilder::new("osu-rust", "yoru")
-        .window_mode(conf::WindowMode::default().dimensions(800.0, 600.0))
-        .window_setup(conf::WindowSetup::default().title("osu-rust"))
+pub fn main() -> GameResult {
+    let (ctx, event_loop) = ContextBuilder::new("circle_game", "Author")
         .build()
-        .unwrap();
+        .expect("aieee, could not create ggez context!");
 
     let map: Beatmap = rosu_map::from_path("./resources/diff.osu").unwrap();
 
-    let state = State::new(map);
-
+    let state = MainState::new(map)?;
     event::run(ctx, event_loop, state)
 }
