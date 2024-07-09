@@ -62,20 +62,26 @@ impl MainState {
 
     fn detect_circle(&mut self, position: Vec2) {
         let mut closest_circle_index: Option<usize> = None;
-        let mut closest_distance = f32::MAX;
 
-        for (i, circle) in self.circles.iter().enumerate() {
+        for (index, circle) in self.circles.iter().enumerate().rev() {
             let distance_from_click = circle.position.distance(position);
 
-            if distance_from_click < circle.radius && distance_from_click < closest_distance {
-                closest_distance = distance_from_click;
-                closest_circle_index = Some(i);
+            // Check if the click is within the circle's radius
+            if distance_from_click < circle.radius {
+                // Check if this circle is the top-most visible one at this click position
+                if closest_circle_index.is_none() || index < closest_circle_index.unwrap() {
+                    closest_circle_index = Some(index);
+                }
             }
         }
 
         if let Some(index) = closest_circle_index {
-            self.circles.remove(index);
+            self.circle_detected(index)
         }
+    }
+
+    fn circle_detected(&mut self, circle_index: usize) {
+        self.circles.remove(circle_index);
     }
 }
 
@@ -145,31 +151,31 @@ impl EventHandler for MainState {
         _repeated: bool,
     ) -> GameResult {
         if let Some(key_input) = input.keycode {
-            if key_input == keyboard::KeyCode::Escape {
-                ctx.request_quit();
-            }
-
-            if key_input == keyboard::KeyCode::A || key_input == keyboard::KeyCode::D {
-                let click_position = Vec2::new(ctx.mouse.position().x, ctx.mouse.position().y);
-                self.detect_circle(click_position);
+            match key_input {
+                keyboard::KeyCode::Escape => ctx.request_quit(),
+                keyboard::KeyCode::A | keyboard::KeyCode::D => {
+                    let click_position = Vec2::new(ctx.mouse.position().x, ctx.mouse.position().y);
+                    self.detect_circle(click_position);
+                }
+                _ => {}
             }
         }
 
         Ok(())
     }
 
-    fn mouse_button_down_event(
-        &mut self,
-        _ctx: &mut Context,
-        _button: ggez::event::MouseButton,
-        x: f32,
-        y: f32,
-    ) -> GameResult {
-        let click_position = Vec2::new(x, y);
-        self.detect_circle(click_position);
+    // fn mouse_button_down_event(
+    //     &mut self,
+    //     _ctx: &mut Context,
+    //     _button: ggez::event::MouseButton,
+    //     x: f32,
+    //     y: f32,
+    // ) -> GameResult {
+    //     let click_position = Vec2::new(x, y);
+    //     self.detect_circle(click_position);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 pub fn main() -> GameResult {
